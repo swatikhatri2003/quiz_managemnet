@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import toast, { Toaster } from "react-hot-toast";
 import { onValue, ref } from "firebase/database";
 
+import { getActiveQuizId } from "@/lib/activeQuiz";
 import { apiPost } from "@/lib/api";
 import { db } from "@/lib/firebase";
 import type { Quiz, Round, Team } from "@/lib/types";
@@ -70,8 +71,11 @@ export function ScoreboardClient() {
     const res = await apiPost<Quiz[]>("/api/quiz/get", {});
     if (!res.ok) return toast.error(res.error.message);
     setQuizzes(res.data);
-    // Prefer quiz_id from URL; otherwise fall back to first quiz.
-    const chosen = initialQuizId ?? res.data[0]?.quiz_id ?? null;
+    const ids = new Set(res.data.map((q) => q.quiz_id));
+    const fromSession = getActiveQuizId();
+    const sessionOk = fromSession && ids.has(fromSession) ? fromSession : null;
+    // URL → last quiz used on points entry → API default (newest id first).
+    const chosen = initialQuizId ?? sessionOk ?? res.data[0]?.quiz_id ?? null;
     if (chosen) setQuizId(chosen);
   }
 

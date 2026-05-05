@@ -11,6 +11,7 @@ import { onValue, ref, set } from "firebase/database";
 
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/Card";
+import { setActiveQuizId } from "@/lib/activeQuiz";
 import { apiPost } from "@/lib/api";
 import type { PointRow, PointUpsertResponse, Quiz, Round, Team } from "@/lib/types";
 import { db } from "@/lib/firebase";
@@ -119,6 +120,10 @@ export function PointsEntryClient() {
 
   useEffect(() => {
     if (quizId) loadQuizDeep(quizId);
+  }, [quizId]);
+
+  useEffect(() => {
+    if (quizId) setActiveQuizId(quizId);
   }, [quizId]);
 
   useEffect(() => {
