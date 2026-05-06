@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
-import { onValue, ref, set } from "firebase/database";
+import { onValue, set, update } from "firebase/database";
 
 import { AppShell } from "@/components/AppShell";
 import { Card } from "@/components/Card";
@@ -15,6 +15,7 @@ import { setActiveQuizId } from "@/lib/activeQuiz";
 import { apiPost } from "@/lib/api";
 import type { PointRow, PointUpsertResponse, Quiz, Round, Team } from "@/lib/types";
 import { db } from "@/lib/firebase";
+import { FIREBASE_QUIZ_ROOT, quizDataRef } from "@/lib/firebaseQuizPath";
 
 const FALLBACK_IMG = "/next.svg";
 
@@ -48,7 +49,8 @@ export function PointsEntryClient() {
   const [roundId, setRoundId] = useState<number | null>(null);
   const [pointsDraft, setPointsDraft] = useState<Record<number, string>>({});
   const [savingTeamId, setSavingTeamId] = useState<number | null>(null);
-  const [firebaseEnabled, setFirebaseEnabled] = useState(true);
+  /** When false, we skip RTDB listeners only — writes still run (rules often allow write but deny read). */
+  const [firebaseListenOk, setFirebaseListenOk] = useState(true);
 
   const rounds = useMemo(() => quizDeep?.rounds ?? [], [quizDeep]);
   const teams = useMemo(() => quizDeep?.teams ?? [], [quizDeep]);
@@ -135,8 +137,8 @@ export function PointsEntryClient() {
   // Same trigger as scoreboard: any points change refetches this round (no manual refresh).
   useEffect(() => {
     if (!quizId || !roundId) return;
-    if (!firebaseEnabled) return;
-    const refreshRef = ref(db, `quiz/${quizId}/refresh_ts`);
+    if (!firebaseListenOk) return;
+    const refreshRef = quizDataRef(db, quizId, "refresh_ts");
     const unsub = onValue(
       refreshRef,
       (snap) => {
@@ -145,11 +147,14 @@ export function PointsEntryClient() {
         refreshRoundPoints(quizId, roundId);
       },
       () => {
-        setFirebaseEnabled(false);
+        setFirebaseListenOk(false);
+        toast.error(
+          `Firebase listen denied for "${FIREBASE_QUIZ_ROOT}". Add DB rules — writes can still be tried.`
+        );
       }
     );
     return () => unsub();
-  }, [quizId, roundId, firebaseEnabled]);
+  }, [quizId, roundId, firebaseListenOk]);
 
   useEffect(() => {
     if (!roundId) return;
@@ -192,42 +197,49 @@ export function PointsEntryClient() {
     await refreshRoundPoints(quizId, roundId);
 
     // Trigger scoreboard refresh (LED screen) via Firebase.
-    if (firebaseEnabled) {
-      try {
-        await set(ref(db, `quiz/${quizId}/refresh_ts`), Date.now());
-      } catch (err: unknown) {
-        setFirebaseEnabled(false);
-        console.warn(
-          "Firebase disabled:",
-          err instanceof Error ? err.message : String(err)
-        );
-      }
+    try {
+      await set(quizDataRef(db, quizId, "refresh_ts"), Date.now());
+    } catch (err: unknown) {
+      console.warn("Firebase refresh_ts write:", err instanceof Error ? err.message : String(err));
+      toast.error(
+        `Firebase write failed. In Realtime Database → Rules, allow .write under "${FIREBASE_QUIZ_ROOT}".`
+      );
     }
   }
 
   async function openScoreboard(mode: { type: "all" } | { type: "round"; round_id: number }) {
     if (!quizId) return;
     const view = mode.type === "all" ? { mode: "all" } : { mode: "round", round_id: mode.round_id };
-    if (firebaseEnabled) {
+    const ts = Date.now();
+    const triggerPayload =
+      mode.type === "all"
+        ? { type: "all" as const, ts }
+        : { type: "round" as const, round_id: mode.round_id, ts };
+    try {
+      await update(quizDataRef(db, quizId), {
+        view: { ...view, ts },
+        trigger: triggerPayload,
+      });
+      toast.success("Firebase updated");
+    } catch (err: unknown) {
       try {
-        await set(ref(db, `quiz/${quizId}/view`), {
+        await set(quizDataRef(db, quizId, "view"), {
           ...view,
-          ts: Date.now(),
+          ts,
+          trigger: triggerPayload,
         });
-      } catch (err: unknown) {
-        setFirebaseEnabled(false);
+        toast.success("Firebase updated (view only)");
+      } catch (err2: unknown) {
         console.warn(
-          "Firebase disabled:",
-          err instanceof Error ? err.message : String(err)
+          "Firebase view/trigger:",
+          err instanceof Error ? err.message : String(err),
+          err2 instanceof Error ? err2.message : String(err2)
         );
-        toast.error("Live view disabled (Firebase permission denied).");
+        toast.error(
+          `Permission denied. Merge frontend/firebase.rtdb.rules.merge-snippet.json into Realtime Database rules.`
+        );
       }
     }
-    const qs =
-      mode.type === "all"
-        ? `quiz_id=${quizId}&mode=all`
-        : `quiz_id=${quizId}&mode=round&round_id=${mode.round_id}`;
-    window.open(`/scoreboard?${qs}`, "_blank");
   }
 
   return (

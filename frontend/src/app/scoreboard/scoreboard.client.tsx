@@ -4,11 +4,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import toast, { Toaster } from "react-hot-toast";
-import { onValue, ref } from "firebase/database";
+import { onValue } from "firebase/database";
 
 import { getActiveQuizId } from "@/lib/activeQuiz";
 import { apiPost } from "@/lib/api";
 import { db } from "@/lib/firebase";
+import { quizDataRef } from "@/lib/firebaseQuizPath";
 import type { Quiz, Round, Team } from "@/lib/types";
 
 const FALLBACK_IMG = "/next.svg";
@@ -64,7 +65,7 @@ export function ScoreboardClient() {
   const [quizId, setQuizId] = useState<number | null>(null);
   const [quizDeep, setQuizDeep] = useState<QuizDeep | null>(null);
   const [view, setView] = useState<ViewState>(initialView);
-  const [firebaseEnabled, setFirebaseEnabled] = useState(true);
+  const [firebaseListenOk, setFirebaseListenOk] = useState(true);
   const [pageCursor, setPageCursor] = useState(0);
 
   async function loadQuizzes() {
@@ -95,10 +96,10 @@ export function ScoreboardClient() {
     if (!quizId) return;
     loadQuizDeep(quizId);
 
-    if (!firebaseEnabled) return;
+    if (!firebaseListenOk) return;
 
     // Live LED: operator (points entry) writes `view`; scoreboard always follows Firebase.
-    const viewRef = ref(db, `quiz/${quizId}/view`);
+    const viewRef = quizDataRef(db, quizId, "view");
     const unsub = onValue(
       viewRef,
       (snap) => {
@@ -111,21 +112,20 @@ export function ScoreboardClient() {
         }
       },
       (err) => {
-        // If Firebase rules deny access, don't crash the UI.
-        setFirebaseEnabled(false);
-        console.warn("Firebase disabled:", err?.message || err);
-        toast.error("Live view disabled (Firebase permission denied).");
+        setFirebaseListenOk(false);
+        console.warn("Firebase listen:", err?.message || err);
+        toast.error("Live view listen denied — check Realtime Database rules for quiz path.");
       }
     );
 
     return () => unsub();
-  }, [quizId, firebaseEnabled]);
+  }, [quizId, firebaseListenOk]);
 
   useEffect(() => {
     if (!quizId) return;
-    if (!firebaseEnabled) return;
+    if (!firebaseListenOk) return;
 
-    const refreshRef = ref(db, `quiz/${quizId}/refresh_ts`);
+    const refreshRef = quizDataRef(db, quizId, "refresh_ts");
     const unsub = onValue(
       refreshRef,
       (snap) => {
@@ -134,13 +134,13 @@ export function ScoreboardClient() {
         loadQuizDeep(quizId);
       },
       (err) => {
-        setFirebaseEnabled(false);
-        console.warn("Firebase disabled:", err?.message || err);
+        setFirebaseListenOk(false);
+        console.warn("Firebase listen:", err?.message || err);
       }
     );
 
     return () => unsub();
-  }, [quizId, firebaseEnabled]);
+  }, [quizId, firebaseListenOk]);
 
   const quizTitle = quizDeep?.name || "Scoreboard";
   const quizImg = safeImage(quizDeep?.image_url);
@@ -314,13 +314,13 @@ function TeamScoreCard({
       )}
 
       <div className="mt-1 text-[11px] text-white/50">
-        {firebaseEnabledLabel()}
+        {firebaseListenLabel()}
       </div>
     </div>
   );
 }
 
-function firebaseEnabledLabel() {
+function firebaseListenLabel() {
   // Pure UI helper. Keep it static (no hooks) so cards don’t re-render often.
   return "Live";
 }

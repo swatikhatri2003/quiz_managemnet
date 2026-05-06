@@ -1,0 +1,8 @@
+{
+  "quiz": {
+    "$quizId": {
+      ".read": true,
+      ".write": true
+    }
+  }
+}
