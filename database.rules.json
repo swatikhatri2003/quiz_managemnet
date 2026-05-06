@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "quiz": {
+      "$quizId": {
+        "view": {
+          ".read": true,
+          ".write": true
+        },
+        "refresh_ts": {
+          ".read": true,
+          ".write": true
+        }
+      }
+    }
+  }
+}

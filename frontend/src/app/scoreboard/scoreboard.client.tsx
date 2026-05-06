@@ -189,26 +189,25 @@ export function ScoreboardClient() {
         toastOptions={{ style: { maxWidth: "min(100vw - 2rem, 360px)" } }}
       />
 
-      <div className="pointer-events-none fixed inset-0 -z-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(56,189,248,0.16),transparent_55%),radial-gradient(circle_at_bottom,rgba(167,139,250,0.14),transparent_55%)]" />
-      </div>
-
-      <header className="flex shrink-0 flex-col gap-3 border-b border-white/10 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-8 sm:py-0 sm:pt-0 md:h-[96px] md:py-0">
-        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
-            <img
-              src={quizImg}
-              alt={quizTitle}
-              className="h-full w-full object-cover"
-              loading="eager"
-            />
-          </div>
-          <div className="min-w-0">
-            <div className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{quizTitle}</div>
-            <div className="text-xs leading-snug text-white/70 sm:text-sm">
-              {view.mode === "round"
-                ? `This round • ${roundsToShow[0]?.round_name ?? `Round ${view.round_id}`}`
-                : "All rounds"}
+      <header className="relative grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/10 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:gap-4 sm:px-8 sm:py-0 sm:pt-0 md:h-[96px] md:py-0">
+        <div />
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center justify-center gap-3 sm:gap-4">
+            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
+              <img
+                src={quizImg}
+                alt={quizTitle}
+                className="h-full w-full object-cover"
+                loading="eager"
+              />
+            </div>
+            <div className="min-w-0 text-center">
+              <div className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{quizTitle}</div>
+              <div className="text-xs leading-snug text-white/70 sm:text-sm">
+                {view.mode === "round"
+                  ? `This round • ${roundsToShow[0]?.round_name ?? `Round ${view.round_id}`}`
+                  : "All rounds"}
+              </div>
             </div>
           </div>
         </div>
@@ -266,13 +265,40 @@ function TeamScoreCard({
     ? scoreByTeamRound.get(`${team.team_id}:${onlyRound.round_id}`)
     : undefined;
 
+  const teamImg = safeImage(team.image_url);
+
+  const totalScore = useMemo(() => {
+    let sum = 0;
+    let hasAny = false;
+    for (const r of rounds) {
+      const v = scoreByTeamRound.get(`${team.team_id}:${r.round_id}`);
+      if (typeof v === "number") {
+        sum += v;
+        hasAny = true;
+      }
+    }
+    return hasAny ? sum : null;
+  }, [rounds, scoreByTeamRound, team.team_id]);
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
       {isSingleRound && onlyRound ? (
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="truncate text-base font-semibold leading-tight sm:text-xl">{team.team_name}</div>
-            <div className="mt-1 truncate text-[11px] text-white/70 sm:text-xs">{onlyRound.round_name}</div>
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
+              <img src={teamImg} alt={team.team_name} className="h-full w-full object-cover" loading="lazy" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <div className="min-w-0 truncate text-base font-semibold leading-tight sm:text-xl">
+                  {team.team_name}
+                </div>
+                <div className="shrink-0 text-[11px] font-semibold tabular-nums text-white/70 sm:text-xs">
+                  Total: {totalScore ?? "-"}
+                </div>
+              </div>
+              <div className="mt-1 truncate text-[11px] text-white/70 sm:text-xs">{onlyRound.round_name}</div>
+            </div>
           </div>
           <div className="shrink-0 text-right">
             <div className="text-xl font-bold tabular-nums leading-none text-sky-300 sm:text-2xl">
@@ -282,7 +308,17 @@ function TeamScoreCard({
         </div>
       ) : (
         <>
-          <div className="truncate text-base font-semibold leading-tight sm:text-xl">{team.team_name}</div>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
+              <img src={teamImg} alt={team.team_name} className="h-full w-full object-cover" loading="lazy" />
+            </div>
+            <div className="min-w-0 flex-1 truncate text-base font-semibold leading-tight sm:text-xl">
+              {team.team_name}
+            </div>
+            <div className="shrink-0 text-xs font-semibold tabular-nums text-white/70">
+              Total: {totalScore ?? "-"}
+            </div>
+          </div>
           {/* Rounds live inside the same card (no separate inner panel). */}
           <div className="mt-2 overflow-hidden">
             <div className="grid grid-cols-[1fr_auto] text-xs">
