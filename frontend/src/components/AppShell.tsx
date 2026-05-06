@@ -4,7 +4,6 @@ import { motion } from "framer-motion";
 
 type AppShellProps = {
   title: string;
-  imageUrl: string;
   children: React.ReactNode;
   /** Matches scoreboard LED header (thin top bar). */
   variant?: "default" | "scoreboard";
@@ -14,7 +13,6 @@ type AppShellProps = {
 
 export function AppShell({
   title,
-  imageUrl,
   children,
   variant = "default",
   subtitle,
@@ -26,14 +24,11 @@ export function AppShell({
         <div />
         <div className="min-w-0">
           <div className="flex min-w-0 items-center justify-center gap-3 sm:gap-4">
-            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
-              <img
-                src={imageUrl}
-                alt={title}
-                className="h-full w-full object-cover"
-                loading="eager"
-              />
-            </div>
+            {/* <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
+              <div className="flex h-full w-full items-center justify-center text-base font-semibold text-white sm:text-lg">
+                {title?.trim()?.[0]?.toUpperCase() ?? "Q"}
+              </div>
+            </div> */}
             <div className="min-w-0 text-center">
               <div className="truncate text-lg font-semibold tracking-tight text-white sm:text-2xl">
                 {title}
@@ -60,7 +55,9 @@ export function AppShell({
         <div />
         <div className="flex items-center justify-center gap-4">
           <div className="relative h-14 w-14 overflow-hidden rounded-xl border border-white/10 bg-white/10">
-            <img src={imageUrl} alt={title} className="h-full w-full object-cover" loading="eager" />
+            <div className="flex h-full w-full items-center justify-center text-lg font-semibold text-white">
+              {title?.trim()?.[0]?.toUpperCase() ?? "Q"}
+            </div>
           </div>
           <div className="min-w-0 text-center">
             <div className="text-xs text-white">Quiz</div>

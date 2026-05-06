@@ -4,7 +4,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { motion } from "framer-motion";
 import toast, { Toaster } from "react-hot-toast";
 import { onValue, set, update } from "firebase/database";
@@ -17,8 +16,6 @@ import type { PointRow, PointUpsertResponse, Quiz, Round, Team } from "@/lib/typ
 import { db } from "@/lib/firebase";
 import { FIREBASE_QUIZ_ROOT, quizDataRef } from "@/lib/firebaseQuizPath";
 
-const FALLBACK_IMG = "/next.svg";
-
 type QuizDeep = Quiz & {
   teams: Team[];
   rounds: Round[];
@@ -29,10 +26,6 @@ type QuizDeep = Quiz & {
     round: Pick<Round, "round_id" | "round_name" | "maximum_score">;
   }>;
 };
-
-function safeImage(src: string | null | undefined) {
-  return src || FALLBACK_IMG;
-}
 
 export function PointsEntryClient() {
   const searchParams = useSearchParams();
@@ -71,7 +64,7 @@ export function PointsEntryClient() {
   }, [quizDeep, roundId]);
 
   async function loadQuizzes() {
-    const res = await apiPost<Quiz[]>("/api/quiz/get", {});
+    const res = await apiPost<Quiz[]>("/quiz/get", {});
     if (!res.ok) return toast.error(res.error.message);
     setQuizzes(res.data);
     const chosen = initialQuizId ?? res.data[0]?.quiz_id ?? null;
@@ -80,7 +73,7 @@ export function PointsEntryClient() {
 
   async function loadQuizDeep(id: number) {
     const res = await apiPost<{ quiz_id: number } & { [k: string]: unknown }>(
-      "/api/quiz/get",
+      "/quiz/get",
       { quiz_id: id }
     );
     if (!res.ok) return toast.error(res.error.message);
@@ -93,7 +86,7 @@ export function PointsEntryClient() {
   }
 
   async function refreshRoundPoints(id: number, rId: number) {
-    const res = await apiPost<PointRow[]>("/api/points/get", {
+    const res = await apiPost<PointRow[]>("/points/get", {
       quiz_id: id,
       round_id: rId,
     });
@@ -168,7 +161,6 @@ export function PointsEntryClient() {
   }, [roundId, teams.length]);
 
   const quizTitle = quizDeep?.name || "Quiz";
-  const quizImg = safeImage(quizDeep?.image_url);
   const headerSubtitle = selectedRound
     ? `Points entry • ${selectedRound.round_name} (max ${selectedRound.maximum_score})`
     : "Points entry";
@@ -245,7 +237,6 @@ export function PointsEntryClient() {
   return (
     <AppShell
       title={quizTitle}
-      imageUrl={quizImg}
       variant="scoreboard"
       subtitle={headerSubtitle}
       // right={quizId ? `Quiz ID: ${quizId}` : null}
@@ -340,13 +331,9 @@ export function PointsEntryClient() {
                   >
                     <div className="flex items-center gap-3">
                       <div className="relative h-11 w-11 overflow-hidden rounded-xl border border-white/10 bg-white/5">
-                        <Image
-                          src={safeImage(t.image_url)}
-                          alt={t.team_name}
-                          fill
-                          sizes="44px"
-                          className="object-cover"
-                        />
+                        <div className="flex h-full w-full items-center justify-center text-base font-semibold text-white">
+                          {t.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
+                        </div>
                       </div>
                       <div>
                         <div className="text-sm font-semibold text-white">{t.team_name}</div>

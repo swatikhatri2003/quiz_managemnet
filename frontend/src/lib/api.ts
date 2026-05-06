@@ -6,9 +6,11 @@ export type ApiErr = {
 
 export type ApiResponse<T> = ApiOk<T> | ApiErr;
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ||
-  "http://localhost:4000";
+const DEFAULT_API_BASE_URL = "http://3.0.81.7/quizz";
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL).replace(
+  /\/$/,
+  ""
+);
 
 export async function apiPost<T>(
   path: string,

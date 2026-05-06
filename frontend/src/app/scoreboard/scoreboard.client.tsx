@@ -12,7 +12,6 @@ import { db } from "@/lib/firebase";
 import { quizDataRef } from "@/lib/firebaseQuizPath";
 import type { Quiz, Round, Team } from "@/lib/types";
 
-const FALLBACK_IMG = "/next.svg";
 const TEAMS_PER_PAGE = 12; // 4 cards/row => 3 rows on 1080p typically
 const ROTATE_MS = 9000;
 
@@ -38,10 +37,6 @@ type QuizDeep = Quiz & {
     round: Pick<Round, "round_id" | "round_name" | "maximum_score">;
   }>;
 };
-
-function safeImage(src: string | null | undefined) {
-  return src || FALLBACK_IMG;
-}
 
 export function ScoreboardClient() {
   const searchParams = useSearchParams();
@@ -69,7 +64,7 @@ export function ScoreboardClient() {
   const [pageCursor, setPageCursor] = useState(0);
 
   async function loadQuizzes() {
-    const res = await apiPost<Quiz[]>("/api/quiz/get", {});
+    const res = await apiPost<Quiz[]>("/quiz/get", {});
     if (!res.ok) return toast.error(res.error.message);
     setQuizzes(res.data);
     const ids = new Set(res.data.map((q) => q.quiz_id));
@@ -81,7 +76,7 @@ export function ScoreboardClient() {
   }
 
   async function loadQuizDeep(id: number) {
-    const res = await apiPost<QuizMeta & { [k: string]: unknown }>("/api/quiz/get", {
+    const res = await apiPost<QuizMeta & { [k: string]: unknown }>("/quiz/get", {
       quiz_id: id,
     });
     if (!res.ok) return toast.error(res.error.message);
@@ -143,7 +138,6 @@ export function ScoreboardClient() {
   }, [quizId, firebaseListenOk]);
 
   const quizTitle = quizDeep?.name || "Scoreboard";
-  const quizImg = safeImage(quizDeep?.image_url);
   const rounds = useMemo(() => quizDeep?.rounds ?? [], [quizDeep]);
   const teams = useMemo(() => quizDeep?.teams ?? [], [quizDeep]);
   const points = useMemo(() => quizDeep?.points ?? [], [quizDeep]);
@@ -182,7 +176,7 @@ export function ScoreboardClient() {
   }, [pageCursor, teams]);
 
   return (
-    <div className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-zinc-950 text-white md:h-screen md:overflow-hidden">
+    <div className="relative flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-white-950 text-white md:h-screen md:overflow-hidden">
       <Toaster
         position="top-center"
         containerClassName="!top-[max(0.5rem,env(safe-area-inset-top))] sm:!top-4"
@@ -190,17 +184,44 @@ export function ScoreboardClient() {
       />
 
       <header className="relative grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/10 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:gap-4 sm:px-8 sm:py-0 sm:pt-0 md:h-[96px] md:py-0">
+        {/* Sponsor logos */}
+        <div className="pointer-events-none absolute left-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center gap-2 sm:left-8 sm:top-3 md:top-4">
+          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
+            <img
+              src="/Rotary%20logo.png"
+              alt="Rotary"
+              className="h-10 w-auto sm:h-11 md:h-12"
+              loading="eager"
+            />
+          </div>
+          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
+            <img
+              src="/Disha%20logo.png"
+              alt="Disha"
+              className="h-10 w-auto sm:h-11 md:h-12"
+              loading="eager"
+            />
+          </div>
+        </div>
+        <div className="pointer-events-none absolute right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center sm:right-8 sm:top-3 md:top-4">
+          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
+            <img
+              src="/Ilead%20Logo.png"
+              alt="iLead"
+              className="h-10 w-auto sm:h-11 md:h-12"
+              loading="eager"
+            />
+          </div>
+        </div>
+
         <div />
         <div className="min-w-0">
           <div className="flex min-w-0 items-center justify-center gap-3 sm:gap-4">
-            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
-              <img
-                src={quizImg}
-                alt={quizTitle}
-                className="h-full w-full object-cover"
-                loading="eager"
-              />
-            </div>
+            {/* <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
+              <div className="flex h-full w-full items-center justify-center text-base font-semibold text-white sm:text-lg">
+                {quizTitle?.trim()?.[0]?.toUpperCase() ?? "Q"}
+              </div>
+            </div> */}
             <div className="min-w-0 text-center">
               <div className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{quizTitle}</div>
               <div className="text-xs leading-snug text-white/70 sm:text-sm">
@@ -229,6 +250,17 @@ export function ScoreboardClient() {
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 md:h-[calc(100dvh-96px)] md:flex-none md:overflow-hidden lg:h-[calc(100dvh-96px)]">
+        <div className="pointer-events-none absolute bottom-3 right-4 z-10 sm:bottom-4 sm:right-8">
+          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
+            <img
+              src="/Vyana%20Logo.png"
+              alt="Vyana"
+              className="h-11 w-auto sm:h-12 md:h-14"
+              loading="eager"
+            />
+          </div>
+        </div>
+
         {quizId && !quizDeep ? (
           <div className="text-base text-white/80 sm:text-lg">Loading…</div>
         ) : teams.length === 0 ? (
@@ -265,8 +297,6 @@ function TeamScoreCard({
     ? scoreByTeamRound.get(`${team.team_id}:${onlyRound.round_id}`)
     : undefined;
 
-  const teamImg = safeImage(team.image_url);
-
   const totalScore = useMemo(() => {
     let sum = 0;
     let hasAny = false;
@@ -286,7 +316,9 @@ function TeamScoreCard({
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
-              <img src={teamImg} alt={team.team_name} className="h-full w-full object-cover" loading="lazy" />
+              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
+                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
+              </div>
             </div>
             <div className="min-w-0">
               <div className="flex min-w-0 items-baseline gap-2">
@@ -310,7 +342,9 @@ function TeamScoreCard({
         <>
           <div className="flex min-w-0 items-center gap-3">
             <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
-              <img src={teamImg} alt={team.team_name} className="h-full w-full object-cover" loading="lazy" />
+              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
+                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
+              </div>
             </div>
             <div className="min-w-0 flex-1 truncate text-base font-semibold leading-tight sm:text-xl">
               {team.team_name}
