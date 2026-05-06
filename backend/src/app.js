@@ -40,7 +40,7 @@ async function createApp() {
     res.json({ ok: true });
   });
 
-  app.use("/api", apiRouter);
+  app.use("/quizz", apiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

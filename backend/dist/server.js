@@ -58409,7 +58409,7 @@ var require_teams_routes = __commonJS({
     var { asyncHandler } = require_asyncHandler();
     var { getTeams } = require_teams_controller();
     var teamsRouter = express.Router();
-    teamsRouter.post("/get", asyncHandler(getTeams));
+    teamsRouter.get("/", asyncHandler(getTeams));
     module2.exports = { teamsRouter };
   }
 });
@@ -58918,13 +58918,13 @@ var require_routes = __commonJS({
     var { pointsRouter } = require_points_routes();
     var { quizRouter } = require_quiz_routes();
     var apiRouter = express.Router();
-    apiRouter.use("/", (req, res) => {
-      res.json({ "server is running on this port": true });
+    apiRouter.get("/", (req, res) => {
+      res.json({ status: "server is running", timestamp: /* @__PURE__ */ new Date() });
     });
-    apiRouter.use("/quiz/teams", teamsRouter);
-    apiRouter.use("/quiz/rounds", roundsRouter);
-    apiRouter.use("/quiz/points", pointsRouter);
-    apiRouter.use("/quiz/quiz", quizRouter);
+    apiRouter.use("/teams", teamsRouter);
+    apiRouter.use("/rounds", roundsRouter);
+    apiRouter.use("/points", pointsRouter);
+    apiRouter.use("/quiz", quizRouter);
     module2.exports = { apiRouter };
   }
 });
@@ -58964,7 +58964,7 @@ var require_app = __commonJS({
       app.get("/health", (req, res) => {
         res.json({ ok: true });
       });
-      app.use("/api", apiRouter);
+      app.use("/quizz", apiRouter);
       app.use(notFoundHandler);
       app.use(errorHandler);
       return app;

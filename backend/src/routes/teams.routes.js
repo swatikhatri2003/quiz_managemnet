@@ -5,7 +5,7 @@ const { getTeams } = require("../controllers/teams.controller");
 const teamsRouter = express.Router();
 
 // POST /api/teams/get  { team_id? }
-teamsRouter.post("/get", asyncHandler(getTeams));
+teamsRouter.get("/", asyncHandler(getTeams));
 
 module.exports = { teamsRouter };
 
