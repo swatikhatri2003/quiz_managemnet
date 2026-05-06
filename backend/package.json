@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && esbuild src/server.js --bundle --platform=node --format=cjs --outfile=dist/server.js --sourcemap",
     "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
+    "start": "node dist/server.js",
     "test": "echo \"No tests\" && exit 0"
   },
   "keywords": [],
@@ -23,6 +25,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "esbuild": "^0.25.9",
     "nodemon": "^3.1.14"
   }
 }
