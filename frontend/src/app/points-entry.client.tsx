@@ -40,7 +40,9 @@ export function PointsEntryClient() {
   const [quizId, setQuizId] = useState<number | null>(null);
   const [quizDeep, setQuizDeep] = useState<QuizDeep | null>(null);
   const [roundId, setRoundId] = useState<number | null>(null);
-  const [pointsDraft, setPointsDraft] = useState<Record<number, string>>({});
+  const [pointsDraftByRound, setPointsDraftByRound] = useState<Record<number, Record<number, string>>>(
+    {}
+  );
   const [savingTeamId, setSavingTeamId] = useState<number | null>(null);
   /** When false, we skip RTDB listeners only — writes still run (rules often allow write but deny read). */
   const [firebaseListenOk, setFirebaseListenOk] = useState(true);
@@ -151,14 +153,20 @@ export function PointsEntryClient() {
 
   useEffect(() => {
     if (!roundId) return;
-    const next: Record<number, string> = {};
-    for (const t of teams) {
-      const existing = pointsByTeamForRound.get(t.team_id);
-      next[t.team_id] = existing ? String(existing.points) : "";
-    }
-    setPointsDraft(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roundId, teams.length]);
+    // Prefill from already-saved points, but never clobber a value the user is currently typing.
+    setPointsDraftByRound((prev) => {
+      const prevForRound = prev[roundId] ?? {};
+      const nextForRound: Record<number, string> = { ...prevForRound };
+      for (const t of teams) {
+        const teamId = t.team_id;
+        const existing = pointsByTeamForRound.get(teamId);
+        const current = prevForRound[teamId];
+        const isEmpty = current == null || current.trim() === "";
+        if (isEmpty) nextForRound[teamId] = existing ? String(existing.points) : "";
+      }
+      return { ...prev, [roundId]: nextForRound };
+    });
+  }, [roundId, teams, pointsByTeamForRound]);
 
   const quizTitle = quizDeep?.name || "Quiz";
   const headerSubtitle = selectedRound
@@ -169,14 +177,14 @@ export function PointsEntryClient() {
     if (!quizId) return;
     if (!roundId) return toast.error("Please select a round first.");
 
-    const raw = pointsDraft[teamId] ?? "";
+    const raw = pointsDraftByRound[roundId]?.[teamId] ?? "";
     if (raw.trim() === "") return toast.error("Please enter points.");
     const points = Number(raw);
     if (!Number.isFinite(points) || points < 0) return toast.error("Points must be a valid number.");
 
     const existing = pointsByTeamForRound.get(teamId);
     setSavingTeamId(teamId);
-    const res = await apiPost<PointUpsertResponse>("/api/points/upsert", {
+    const res = await apiPost<PointUpsertResponse>("/points/upsert", {
       point_id: existing?.point_id,
       points,
       team_id: teamId,
@@ -199,14 +207,23 @@ export function PointsEntryClient() {
     }
   }
 
-  async function openScoreboard(mode: { type: "all" } | { type: "round"; round_id: number }) {
+  async function openScoreboard(
+    mode: { type: "all" } | { type: "round"; round_id: number } | { type: "total" }
+  ) {
     if (!quizId) return;
-    const view = mode.type === "all" ? { mode: "all" } : { mode: "round", round_id: mode.round_id };
+    const view =
+      mode.type === "all"
+        ? { mode: "all" as const }
+        : mode.type === "total"
+          ? { mode: "total" as const }
+          : { mode: "round" as const, round_id: mode.round_id };
     const ts = Date.now();
     const triggerPayload =
       mode.type === "all"
         ? { type: "all" as const, ts }
-        : { type: "round" as const, round_id: mode.round_id, ts };
+        : mode.type === "total"
+          ? { type: "total" as const, ts }
+          : { type: "round" as const, round_id: mode.round_id, ts };
     try {
       await update(quizDataRef(db, quizId), {
         view: { ...view, ts },
@@ -284,27 +301,35 @@ export function PointsEntryClient() {
               >
                 {rounds.map((r) => (
                   <option key={r.round_id} value={r.round_id}>
-                    {r.round_name} (max {r.maximum_score})
+                    {r.round_name}
                   </option>
                 ))}
               </select>
             </label>
 
-            <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:flex-wrap">
+            <div className="grid grid-cols-1 gap-2 pt-1 sm:grid-cols-3">
               <button
                 type="button"
                 onClick={() => openScoreboard({ type: "all" })}
-                className="h-12 touch-manipulation rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 sm:h-11 sm:min-w-0 sm:flex-1"
+                className="h-12 touch-manipulation rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 sm:h-11"
               >
-                Open: All rounds
+                All rounds
               </button>
 
               <button
                 type="button"
                 onClick={() => (roundId ? openScoreboard({ type: "round", round_id: roundId }) : null)}
-                className="h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11 sm:flex-1"
+                className="h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11"
               >
-                Open: This round
+                This round
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openScoreboard({ type: "total" })}
+                className="h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11"
+              >
+                Total points
               </button>
             </div>
           </div>
@@ -346,9 +371,13 @@ export function PointsEntryClient() {
                     <div className="flex w-full items-center gap-2 sm:w-auto">
                       <input
                         inputMode="numeric"
-                        value={pointsDraft[t.team_id] ?? ""}
+                        value={roundId ? (pointsDraftByRound[roundId]?.[t.team_id] ?? "") : ""}
                         onChange={(e) =>
-                          setPointsDraft((p) => ({ ...p, [t.team_id]: e.target.value }))
+                          setPointsDraftByRound((p) => {
+                            if (!roundId) return p;
+                            const prevForRound = p[roundId] ?? {};
+                            return { ...p, [roundId]: { ...prevForRound, [t.team_id]: e.target.value } };
+                          })
                         }
                         placeholder="Points"
                         className="h-12 min-h-11 w-full min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 px-3 text-base text-zinc-50 outline-none focus:border-sky-400/50 sm:h-11 sm:w-40 sm:text-sm"

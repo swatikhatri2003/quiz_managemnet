@@ -17,7 +17,8 @@ const ROTATE_MS = 9000;
 
 type ViewState =
   | { mode: "all"; ts?: number }
-  | { mode: "round"; round_id: number; ts?: number };
+  | { mode: "round"; round_id: number; ts?: number }
+  | { mode: "total"; ts?: number };
 
 type QuizMeta = {
   quiz_id: number;
@@ -53,6 +54,7 @@ export function ScoreboardClient() {
       const n = raw ? Number(raw) : NaN;
       if (Number.isFinite(n) && n > 0) return { mode: "round", round_id: n };
     }
+    if (mode === "total") return { mode: "total" };
     return { mode: "all" };
   }, [searchParams]);
 
@@ -102,6 +104,8 @@ export function ScoreboardClient() {
         if (!val) return;
         if (val?.mode === "round" && typeof val.round_id === "number") {
           setView({ mode: "round", round_id: val.round_id, ts: val.ts });
+        } else if (val?.mode === "total") {
+          setView({ mode: "total", ts: val?.ts });
         } else {
           setView({ mode: "all", ts: val?.ts });
         }
@@ -158,7 +162,11 @@ export function ScoreboardClient() {
   // Reset paging when view/quiz changes.
   useEffect(() => {
     setPageCursor(0);
-  }, [view.mode, view.mode === "round" ? view.round_id : "all", quizId]);
+  }, [
+    view.mode,
+    view.mode === "round" ? view.round_id : view.mode === "total" ? "total" : "all",
+    quizId,
+  ]);
 
   // Auto-rotate pages (LED-friendly: no scroll).
   useEffect(() => {
@@ -172,8 +180,34 @@ export function ScoreboardClient() {
 
   const pageTeams = useMemo(() => {
     const start = pageCursor * TEAMS_PER_PAGE;
-    return teams.slice(start, start + TEAMS_PER_PAGE);
-  }, [pageCursor, teams]);
+
+    const computeTotal = (teamId: number) => {
+      let sum = 0;
+      let hasAny = false;
+      for (const r of rounds) {
+        const v = scoreByTeamRound.get(`${teamId}:${r.round_id}`);
+        if (typeof v === "number") {
+          sum += v;
+          hasAny = true;
+        }
+      }
+      return hasAny ? sum : null;
+    };
+
+    const displayTeams =
+      view.mode === "total"
+        ? [...teams].sort((a, b) => {
+            const ta = computeTotal(a.team_id);
+            const tb = computeTotal(b.team_id);
+            const na = typeof ta === "number" ? ta : -Infinity;
+            const nb = typeof tb === "number" ? tb : -Infinity;
+            if (nb !== na) return nb - na;
+            return (a.team_name ?? "").localeCompare(b.team_name ?? "");
+          })
+        : teams;
+
+    return displayTeams.slice(start, start + TEAMS_PER_PAGE);
+  }, [pageCursor, rounds, scoreByTeamRound, teams, view.mode]);
 
   return (
     <div className="relative flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-white-950 text-white md:h-screen md:overflow-hidden">
@@ -188,7 +222,7 @@ export function ScoreboardClient() {
         <div className="pointer-events-none absolute left-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center gap-2 sm:left-8 sm:top-3 md:top-4">
           <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
             <img
-              src="/Rotary%20logo.png"
+              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Rotary_logo.png"
               alt="Rotary"
               className="h-10 w-auto sm:h-11 md:h-12"
               loading="eager"
@@ -196,7 +230,7 @@ export function ScoreboardClient() {
           </div>
           <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
             <img
-              src="/Disha%20logo.png"
+              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Disha_logo.png"
               alt="Disha"
               className="h-10 w-auto sm:h-11 md:h-12"
               loading="eager"
@@ -206,7 +240,7 @@ export function ScoreboardClient() {
         <div className="pointer-events-none absolute right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center sm:right-8 sm:top-3 md:top-4">
           <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
             <img
-              src="/Ilead%20Logo.png"
+              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Ilead_Logo.png"
               alt="iLead"
               className="h-10 w-auto sm:h-11 md:h-12"
               loading="eager"
@@ -227,6 +261,8 @@ export function ScoreboardClient() {
               <div className="text-xs leading-snug text-white/70 sm:text-sm">
                 {view.mode === "round"
                   ? `This round • ${roundsToShow[0]?.round_name ?? `Round ${view.round_id}`}`
+                  : view.mode === "total"
+                    ? "Total points"
                   : "All rounds"}
               </div>
             </div>
@@ -253,7 +289,7 @@ export function ScoreboardClient() {
         <div className="pointer-events-none absolute bottom-3 right-4 z-10 sm:bottom-4 sm:right-8">
           <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
             <img
-              src="/Vyana%20Logo.png"
+              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Vyana_Logo.png"
               alt="Vyana"
               className="h-11 w-auto sm:h-12 md:h-14"
               loading="eager"
@@ -266,13 +302,20 @@ export function ScoreboardClient() {
         ) : teams.length === 0 ? (
           <div className="text-base text-white/80 sm:text-lg">No teams found.</div>
         ) : (
-          <div className="grid grid-cols-1 content-start items-start gap-3 pb-[env(safe-area-inset-bottom)] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div
+            className={`grid grid-cols-1 content-start items-start gap-3 pb-[env(safe-area-inset-bottom)] sm:grid-cols-2 ${
+              view.mode === "round" || view.mode === "total"
+                ? "lg:grid-cols-2 xl:grid-cols-2"
+                : "lg:grid-cols-3 xl:grid-cols-4"
+            }`}
+          >
             {pageTeams.map((t) => (
               <TeamScoreCard
                 key={t.team_id}
                 team={t}
                 rounds={roundsToShow}
                 scoreByTeamRound={scoreByTeamRound}
+                viewMode={view.mode}
               />
             ))}
           </div>
@@ -286,10 +329,12 @@ function TeamScoreCard({
   team,
   rounds,
   scoreByTeamRound,
+  viewMode,
 }: {
   team: Team;
   rounds: Round[];
   scoreByTeamRound: Map<string, number>;
+  viewMode: ViewState["mode"];
 }) {
   const isSingleRound = rounds.length === 1;
   const onlyRound = isSingleRound ? rounds[0]! : null;
@@ -312,7 +357,30 @@ function TeamScoreCard({
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-      {isSingleRound && onlyRound ? (
+      {viewMode === "total" ? (
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
+              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
+                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
+              </div>
+            </div>
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <div className="min-w-0 truncate text-base font-semibold leading-tight sm:text-xl">
+                  {team.team_name}
+                </div>
+              </div>
+              <div className="mt-1 truncate text-[11px] text-white/70 sm:text-xs">Total points</div>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <div className="text-xl font-bold tabular-nums leading-none text-sky-300 sm:text-2xl">
+              {typeof totalScore === "number" ? totalScore : "-"}
+            </div>
+          </div>
+        </div>
+      ) : isSingleRound && onlyRound ? (
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
