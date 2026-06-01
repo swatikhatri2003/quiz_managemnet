@@ -10,6 +10,7 @@ import { getActiveQuizId } from "@/lib/activeQuiz";
 import { apiPost } from "@/lib/api";
 import { db } from "@/lib/firebase";
 import { quizDataRef } from "@/lib/firebaseQuizPath";
+import { resolveTeamImageUrl } from "@/lib/teamImageUrl";
 import type { Quiz, Round, Team } from "@/lib/types";
 
 const TEAMS_PER_PAGE = 12; // 4 cards/row => 3 rows on 1080p typically
@@ -38,6 +39,22 @@ type QuizDeep = Quiz & {
     round: Pick<Round, "round_id" | "round_name" | "maximum_score">;
   }>;
 };
+
+/** Badge initials: 1st letter of word 1 + 1st letter of word 2; one word → first two letters of that word. */
+function teamInitials(raw: string | null | undefined): string {
+  const s = raw?.trim() ?? "";
+  if (!s) return "TT";
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) {
+    const a = (words[0]![0] ?? "").toUpperCase();
+    const b = (words[1]![0] ?? "").toUpperCase();
+    return `${a}${b}`;
+  }
+  const w = words[0] ?? "";
+  if (w.length >= 2) return `${w[0]!.toUpperCase()}${w[1]!.toUpperCase()}`;
+  const c = (w[0] ?? "T").toUpperCase();
+  return `${c}${c}`;
+}
 
 export function ScoreboardClient() {
   const searchParams = useSearchParams();
@@ -141,8 +158,13 @@ export function ScoreboardClient() {
     return () => unsub();
   }, [quizId, firebaseListenOk]);
 
-  const quizTitle = quizDeep?.name || "Scoreboard";
   const rounds = useMemo(() => quizDeep?.rounds ?? [], [quizDeep]);
+  const scoreboardHeading =
+    view.mode === "total"
+      ? "Total Points"
+      : view.mode === "round"
+        ? rounds.find((r) => r.round_id === view.round_id)?.round_name ?? ""
+        : "";
   const teams = useMemo(() => quizDeep?.teams ?? [], [quizDeep]);
   const points = useMemo(() => quizDeep?.points ?? [], [quizDeep]);
 
@@ -159,14 +181,17 @@ export function ScoreboardClient() {
     return m;
   }, [points]);
 
+  const viewPagingKey =
+    view.mode === "round"
+      ? view.round_id
+      : view.mode === "total"
+        ? "total"
+        : "all";
+
   // Reset paging when view/quiz changes.
   useEffect(() => {
     setPageCursor(0);
-  }, [
-    view.mode,
-    view.mode === "round" ? view.round_id : view.mode === "total" ? "total" : "all",
-    quizId,
-  ]);
+  }, [viewPagingKey, quizId]);
 
   // Auto-rotate pages (LED-friendly: no scroll).
   useEffect(() => {
@@ -183,15 +208,11 @@ export function ScoreboardClient() {
 
     const computeTotal = (teamId: number) => {
       let sum = 0;
-      let hasAny = false;
       for (const r of rounds) {
         const v = scoreByTeamRound.get(`${teamId}:${r.round_id}`);
-        if (typeof v === "number") {
-          sum += v;
-          hasAny = true;
-        }
+        if (typeof v === "number") sum += v;
       }
-      return hasAny ? sum : null;
+      return sum;
     };
 
     const displayTeams =
@@ -199,8 +220,8 @@ export function ScoreboardClient() {
         ? [...teams].sort((a, b) => {
             const ta = computeTotal(a.team_id);
             const tb = computeTotal(b.team_id);
-            const na = typeof ta === "number" ? ta : -Infinity;
-            const nb = typeof tb === "number" ? tb : -Infinity;
+            const na = ta;
+            const nb = tb;
             if (nb !== na) return nb - na;
             return (a.team_name ?? "").localeCompare(b.team_name ?? "");
           })
@@ -210,64 +231,27 @@ export function ScoreboardClient() {
   }, [pageCursor, rounds, scoreByTeamRound, teams, view.mode]);
 
   return (
-    <div className="relative flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-white-950 text-white md:h-screen md:overflow-hidden">
-      <Toaster
-        position="top-center"
-        containerClassName="!top-[max(0.5rem,env(safe-area-inset-top))] sm:!top-4"
-        toastOptions={{ style: { maxWidth: "min(100vw - 2rem, 360px)" } }}
-      />
+    <div className="relative flex min-h-[100dvh] w-full items-center justify-center overflow-hidden bg-[#050507] text-white">
+      {/* Render everything inside the visible background image frame (16:9), so cards never spill outside the image area */}
+      <div
+        className="relative h-[100dvh] w-full max-w-[min(100vw,calc(100dvh*1.7778))] overflow-hidden"
+        style={{
+          backgroundImage:
+            'url("https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsors/Background.png")',
+          backgroundSize: "100% 100%",
+          backgroundPosition: "center",
+          backgroundRepeat: "no-repeat",
+          backgroundColor: "#050507",
+        }}
+      >
+        {/* Balloons overlay (animated) */}
+        <div className="pointer-events-none absolute inset-0 z-0 animated-balloons opacity-50" />
 
-      <header className="relative grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-white/10 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:gap-4 sm:px-8 sm:py-0 sm:pt-0 md:h-[96px] md:py-0">
-        {/* Sponsor logos */}
-        <div className="pointer-events-none absolute left-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center gap-2 sm:left-8 sm:top-3 md:top-4">
-          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
-            <img
-              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Rotary_logo.png"
-              alt="Rotary"
-              className="h-10 w-auto sm:h-11 md:h-12"
-              loading="eager"
-            />
-          </div>
-          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
-            <img
-              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Disha_logo.png"
-              alt="Disha"
-              className="h-10 w-auto sm:h-11 md:h-12"
-              loading="eager"
-            />
-          </div>
-        </div>
-        <div className="pointer-events-none absolute right-4 top-[max(0.75rem,env(safe-area-inset-top))] z-10 flex items-center sm:right-8 sm:top-3 md:top-4">
-          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
-            <img
-              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Ilead_Logo.png"
-              alt="iLead"
-              className="h-10 w-auto sm:h-11 md:h-12"
-              loading="eager"
-            />
-          </div>
-        </div>
-
-        <div />
-        <div className="min-w-0">
-          <div className="flex min-w-0 items-center justify-center gap-3 sm:gap-4">
-            {/* <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:h-14 sm:w-14">
-              <div className="flex h-full w-full items-center justify-center text-base font-semibold text-white sm:text-lg">
-                {quizTitle?.trim()?.[0]?.toUpperCase() ?? "Q"}
-              </div>
-            </div> */}
-            <div className="min-w-0 text-center">
-              <div className="truncate text-lg font-semibold tracking-tight sm:text-2xl">{quizTitle}</div>
-              <div className="text-xs leading-snug text-white/70 sm:text-sm">
-                {view.mode === "round"
-                  ? `This round • ${roundsToShow[0]?.round_name ?? `Round ${view.round_id}`}`
-                  : view.mode === "total"
-                    ? "Total points"
-                  : "All rounds"}
-              </div>
-            </div>
-          </div>
-        </div>
+        <Toaster
+          position="top-center"
+          containerClassName="!top-[max(0.5rem,env(safe-area-inset-top))] sm:!top-4"
+          toastOptions={{ style: { maxWidth: "min(100vw - 2rem, 360px)" } }}
+        />
 
         {/* Hidden control: keeps ability to switch quiz from URL debugging */}
         <div className="hidden">
@@ -280,47 +264,41 @@ export function ScoreboardClient() {
           </select>
         </div>
 
-        {/* <div className="text-sm text-white/70">
-          Page {pageCursor + 1}/{Math.max(1, Math.ceil(teams.length / TEAMS_PER_PAGE))}
-        </div> */}
-      </header>
-
-      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-8 sm:py-6 md:h-[calc(100dvh-96px)] md:flex-none md:overflow-hidden lg:h-[calc(100dvh-96px)]">
-        <div className="pointer-events-none absolute bottom-3 right-4 z-10 sm:bottom-4 sm:right-8">
-          <div className="rounded-xl bg-white/95 px-2 py-1 shadow-sm ring-1 ring-black/10 backdrop-blur">
-            <img
-              src="https://mscsuper.blr1.cdn.digitaloceanspaces.com/sponsor/Vyana_Logo.png"
-              alt="Vyana"
-              className="h-11 w-auto sm:h-12 md:h-14"
-              loading="eager"
-            />
+        <main className="relative z-10 flex h-full w-full items-center justify-center overflow-y-auto px-[5px]">
+          <div className="flex w-full items-center justify-center pt-[clamp(64px,12vh,160px)] pb-[clamp(28px,6vh,96px)]">
+            {quizId && !quizDeep ? (
+              <div className="text-base text-white/80 sm:text-lg">Loading…</div>
+            ) : teams.length === 0 ? (
+              <div className="text-base text-white/80 sm:text-lg">No teams found.</div>
+            ) : (
+              <div className="flex w-full flex-col items-stretch gap-4">
+                {scoreboardHeading ? (
+                  <h2 className="text-center text-xxl font-bold tracking-tight text-white drop-shadow sm:text-2xl lg:text-3xl">
+                    {scoreboardHeading}
+                  </h2>
+                ) : null}
+                <div
+                  className={`grid w-full grid-cols-1 items-start gap-3 p-3 pb-[env(safe-area-inset-bottom)] sm:grid-cols-2 ${
+                    view.mode === "round" || view.mode === "total"
+                      ? "lg:grid-cols-2 xl:grid-cols-2"
+                      : "lg:grid-cols-3 xl:grid-cols-4"
+                  }`}
+                >
+                {pageTeams.map((t) => (
+                  <TeamScoreCard
+                    key={t.team_id}
+                    team={t}
+                    rounds={roundsToShow}
+                    scoreByTeamRound={scoreByTeamRound}
+                    viewMode={view.mode}
+                  />
+                ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-
-        {quizId && !quizDeep ? (
-          <div className="text-base text-white/80 sm:text-lg">Loading…</div>
-        ) : teams.length === 0 ? (
-          <div className="text-base text-white/80 sm:text-lg">No teams found.</div>
-        ) : (
-          <div
-            className={`grid grid-cols-1 content-start items-start gap-3 pb-[env(safe-area-inset-bottom)] sm:grid-cols-2 ${
-              view.mode === "round" || view.mode === "total"
-                ? "lg:grid-cols-2 xl:grid-cols-2"
-                : "lg:grid-cols-3 xl:grid-cols-4"
-            }`}
-          >
-            {pageTeams.map((t) => (
-              <TeamScoreCard
-                key={t.team_id}
-                team={t}
-                rounds={roundsToShow}
-                scoreByTeamRound={scoreByTeamRound}
-                viewMode={view.mode}
-              />
-            ))}
-          </div>
-        )}
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
@@ -344,81 +322,62 @@ function TeamScoreCard({
 
   const totalScore = useMemo(() => {
     let sum = 0;
-    let hasAny = false;
     for (const r of rounds) {
       const v = scoreByTeamRound.get(`${team.team_id}:${r.round_id}`);
-      if (typeof v === "number") {
-        sum += v;
-        hasAny = true;
-      }
+      if (typeof v === "number") sum += v;
     }
-    return hasAny ? sum : null;
+    return sum;
   }, [rounds, scoreByTeamRound, team.team_id]);
+
+  const avatarSrc = resolveTeamImageUrl(team.image_url);
 
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
       {viewMode === "total" ? (
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
-              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
-                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
-              </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg">
+              <img src={avatarSrc} alt={team.team_name ?? ""} className="h-full w-full object-cover" />
             </div>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-baseline gap-2">
-                <div className="min-w-0 truncate text-base font-semibold leading-tight sm:text-xl">
-                  {team.team_name}
-                </div>
-              </div>
-              <div className="mt-1 truncate text-[11px] text-white/70 sm:text-xs">Total points</div>
+            <div className="min-w-0 flex-1 whitespace-normal break-words text-lg font-semibold leading-snug text-white sm:text-xl">
+              {team.team_name}
             </div>
           </div>
-          <div className="shrink-0 text-right">
-            <div className="text-xl font-bold tabular-nums leading-none text-sky-300 sm:text-2xl">
-              {typeof totalScore === "number" ? totalScore : "-"}
+          <div className="shrink-0 self-center text-right">
+            <div className="text-3xl font-bold tabular-nums leading-none text-amber-300 sm:text-4xl lg:text-5xl">
+              {totalScore}
             </div>
           </div>
         </div>
       ) : isSingleRound && onlyRound ? (
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="relative mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
-              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
-                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
-              </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg">
+              <img src={avatarSrc} alt={team.team_name ?? ""} className="h-full w-full object-cover" />
             </div>
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-baseline gap-2">
-                <div className="min-w-0 truncate text-base font-semibold leading-tight sm:text-xl">
-                  {team.team_name}
-                </div>
-                <div className="shrink-0 text-[11px] font-semibold tabular-nums text-white/70 sm:text-xs">
-                  Total: {totalScore ?? "-"}
-                </div>
-              </div>
-              <div className="mt-1 truncate text-[11px] text-white/70 sm:text-xs">{onlyRound.round_name}</div>
+            <div className="min-w-0 flex-1 whitespace-normal break-words text-lg font-semibold leading-snug text-white sm:text-xl">
+              {team.team_name}
             </div>
           </div>
-          <div className="shrink-0 text-right">
-            <div className="text-xl font-bold tabular-nums leading-none text-sky-300 sm:text-2xl">
-              {typeof onlyScore === "number" ? onlyScore : "-"}
+          <div className="shrink-0 self-center text-right">
+            <div className="text-3xl font-bold tabular-nums leading-none text-amber-300 sm:text-4xl lg:text-5xl">
+              {typeof onlyScore === "number" ? onlyScore : 0}
             </div>
           </div>
         </div>
       ) : (
         <>
           <div className="flex min-w-0 items-center gap-3">
-            <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-white/10 sm:h-9 sm:w-9">
-              <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-white sm:text-sm">
-                {team.team_name?.trim()?.[0]?.toUpperCase() ?? "T"}
+            <div className="relative flex h-8 min-w-[2.125rem] shrink-0 items-center justify-center overflow-hidden rounded-lg px-0.5 sm:h-9 sm:min-w-[2.375rem]">
+              <div className="flex h-full w-full items-center justify-center text-[10px] font-semibold leading-none tracking-tight text-white sm:text-xs">
+                <img src={avatarSrc} alt={team.team_name ?? ""} className="h-full w-full object-cover" />
               </div>
             </div>
-            <div className="min-w-0 flex-1 truncate text-base font-semibold leading-tight sm:text-xl">
+            <div className="min-w-0 flex-1 whitespace-normal break-words text-lg font-semibold leading-tight sm:text-xl">
               {team.team_name}
             </div>
-            <div className="shrink-0 text-xs font-semibold tabular-nums text-white/70">
-              Total: {totalScore ?? "-"}
+            <div className="shrink-0 text-lg font-bold tabular-nums text-amber-300 sm:text-xl lg:text-2xl">
+              {totalScore}
             </div>
           </div>
           {/* Rounds live inside the same card (no separate inner panel). */}
@@ -434,8 +393,8 @@ function TeamScoreCard({
                       className={`contents ${showBorder ? "[&>*]:border-b [&>*]:border-white/10" : ""}`}
                     >
                       <div className="truncate py-1 pr-3 text-white/85">{r.round_name}</div>
-                      <div className="py-1 text-right font-bold tabular-nums text-sky-300">
-                        {typeof score === "number" ? score : "-"}
+                      <div className="py-1 text-right font-bold tabular-nums text-amber-300">
+                        {typeof score === "number" ? score : 0}
                       </div>
                     </div>
                   );
@@ -443,7 +402,7 @@ function TeamScoreCard({
               ) : (
                 <>
                   <div className="py-1 text-white/70">No rounds</div>
-                  <div className="py-1 text-right text-white/70">-</div>
+                  <div className="py-1 text-right text-white/70">0</div>
                 </>
               )}
             </div>
@@ -451,14 +410,7 @@ function TeamScoreCard({
         </>
       )}
 
-      <div className="mt-1 text-[11px] text-white/50">
-        {firebaseListenLabel()}
-      </div>
+      {/* Live label removed (per LED UI request) */}
     </div>
   );
-}
-
-function firebaseListenLabel() {
-  // Pure UI helper. Keep it static (no hooks) so cards don’t re-render often.
-  return "Live";
 }

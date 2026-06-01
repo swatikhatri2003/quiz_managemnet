@@ -15,6 +15,28 @@ import { apiPost } from "@/lib/api";
 import type { PointRow, PointUpsertResponse, Quiz, Round, Team } from "@/lib/types";
 import { db } from "@/lib/firebase";
 import { FIREBASE_QUIZ_ROOT, quizDataRef } from "@/lib/firebaseQuizPath";
+import Link from "next/link";
+
+/** Mirrors scoreboard LED view from Firebase `view` (which button is live). */
+type LedView =
+  | { mode: "all"; ts?: number }
+  | { mode: "round"; round_id: number; ts?: number }
+  | { mode: "total"; ts?: number };
+
+function scoreboardNavButtonClass(active: boolean) {
+  return active
+    ? "h-12 touch-manipulation rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 sm:h-11"
+    : "h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11";
+}
+
+/** Full URL for the LED scoreboard tab (must match `basePath` in next.config.js). */
+function buildScoreboardPageUrl(quizId: number | null): string {
+  if (typeof window === "undefined") return "";
+  const params = new URLSearchParams();
+  if (quizId) params.set("quiz_id", String(quizId));
+  const qs = params.toString();
+  return `${window.location.origin}/quiz_f/scoreboard/${qs ? `?${qs}` : ""}`;
+}
 
 type QuizDeep = Quiz & {
   teams: Team[];
@@ -46,6 +68,7 @@ export function PointsEntryClient() {
   const [savingTeamId, setSavingTeamId] = useState<number | null>(null);
   /** When false, we skip RTDB listeners only — writes still run (rules often allow write but deny read). */
   const [firebaseListenOk, setFirebaseListenOk] = useState(true);
+  const [ledView, setLedView] = useState<LedView | null>(null);
 
   const rounds = useMemo(() => quizDeep?.rounds ?? [], [quizDeep]);
   const teams = useMemo(() => quizDeep?.teams ?? [], [quizDeep]);
@@ -54,6 +77,14 @@ export function PointsEntryClient() {
     () => rounds.find((r) => r.round_id === roundId) || null,
     [rounds, roundId]
   );
+
+  function onChangeQuizId(nextQuizId: number) {
+    if (!Number.isFinite(nextQuizId) || nextQuizId <= 0) return;
+    setQuizId(nextQuizId);
+    // Ensure the UI doesn't keep showing the previous quiz's teams/rounds while loading.
+    setQuizDeep(null);
+    setRoundId(null);
+  }
 
   const pointsByTeamForRound = useMemo(() => {
     const map = new Map<number, { point_id: number; points: number }>();
@@ -151,6 +182,38 @@ export function PointsEntryClient() {
     return () => unsub();
   }, [quizId, roundId, firebaseListenOk]);
 
+  // Keep button highlight in sync with what the LED scoreboard is showing.
+  useEffect(() => {
+    if (!quizId) return;
+    if (!firebaseListenOk) return;
+    const viewRef = quizDataRef(db, quizId, "view");
+    const unsub = onValue(
+      viewRef,
+      (snap) => {
+        const val = snap.val() as Record<string, unknown> | null;
+        if (!val || typeof val !== "object") {
+          setLedView(null);
+          return;
+        }
+        const mode = val.mode;
+        if (mode === "round" && typeof val.round_id === "number") {
+          setLedView({ mode: "round", round_id: val.round_id, ts: val.ts as number | undefined });
+        } else if (mode === "total") {
+          setLedView({ mode: "total", ts: val.ts as number | undefined });
+        } else if (mode === "all") {
+          setLedView({ mode: "all", ts: val.ts as number | undefined });
+        } else {
+          // Unknown / legacy payload — do not default to "all" (avoids false white All rounds).
+          setLedView(null);
+        }
+      },
+      () => {
+        setFirebaseListenOk(false);
+      }
+    );
+    return () => unsub();
+  }, [quizId, firebaseListenOk]);
+
   useEffect(() => {
     if (!roundId) return;
     // Prefill from already-saved points, but never clobber a value the user is currently typing.
@@ -169,8 +232,13 @@ export function PointsEntryClient() {
   }, [roundId, teams, pointsByTeamForRound]);
 
   const quizTitle = quizDeep?.name || "Quiz";
+  // White only when Firebase view matches (ledView null ⇒ all three dark until RTDB has a known view).
+  const allRoundsActive = ledView != null && ledView.mode === "all";
+  const thisRoundActive = ledView != null && ledView.mode === "round";
+  const totalPointsActive = ledView != null && ledView.mode === "total";
+
   const headerSubtitle = selectedRound
-    ? `Points entry • ${selectedRound.round_name} (max ${selectedRound.maximum_score})`
+    ? `Points entry • ${selectedRound.round_name} `
     : "Points entry";
 
   async function upsertTeamPoints(teamId: number) {
@@ -207,6 +275,23 @@ export function PointsEntryClient() {
     }
   }
 
+  function openLedScreenPage() {
+    const url = buildScoreboardPageUrl(quizId);
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
+
+  async function copyLedScreenLink() {
+    const url = buildScoreboardPageUrl(quizId);
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("LED screen link copied");
+    } catch {
+      toast.error("Could not copy link");
+    }
+  }
+
   async function openScoreboard(
     mode: { type: "all" } | { type: "round"; round_id: number } | { type: "total" }
   ) {
@@ -229,6 +314,7 @@ export function PointsEntryClient() {
         view: { ...view, ts },
         trigger: triggerPayload,
       });
+      setLedView({ ...view, ts });
       toast.success("Firebase updated");
     } catch (err: unknown) {
       try {
@@ -237,6 +323,7 @@ export function PointsEntryClient() {
           ts,
           trigger: triggerPayload,
         });
+        setLedView({ ...view, ts });
         toast.success("Firebase updated (view only)");
       } catch (err2: unknown) {
         console.warn(
@@ -269,28 +356,40 @@ export function PointsEntryClient() {
           title="Quiz & Round"
           right={
             selectedRound ? (
-              <div className="text-xs text-white">{selectedRound.round_name}</div>
-            ) : null
+              <div className="flex items-center gap-2">
+                <div className="text-xs text-white">{selectedRound.round_name}</div>
+                <Link
+                  href="/manage/"
+                  className=" p-1 touch-manipulation rounded-xl border border-white/10 bg-white/5  text-xs font-semibold text-white hover:bg-white/10"
+                >
+                  Manage
+                </Link>
+              </div>
+            ) : (
+              <Link
+                href="/manage/"
+                className=" touch-manipulation rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-semibold text-white hover:bg-white/10"
+              >
+                Manage
+              </Link>
+            )
           }
         >
           <div className="grid gap-3">
-            {/* Quiz select hidden for now (single-quiz flow). */}
-            {/*
-              <label className="grid gap-1 text-sm">
-                <span className="text-white">Quiz</span>
-                <select
-                  value={quizId ?? ""}
-                  onChange={(e) => setQuizId(Number(e.target.value))}
-                  className="h-11 rounded-xl border border-white/10 bg-zinc-950/60 px-3 text-zinc-50 outline-none focus:border-sky-400/50"
-                >
-                  {quizzes.map((q) => (
-                    <option key={q.quiz_id} value={q.quiz_id}>
-                      {q.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            */}
+            <label className="grid gap-1 text-sm">
+              <span className="text-white">Quiz</span>
+              <select
+                value={quizId ?? ""}
+                onChange={(e) => onChangeQuizId(Number(e.target.value))}
+                className="h-12 min-h-11 rounded-xl border border-white/10 bg-zinc-950/60 px-3 text-base text-zinc-50 outline-none focus:border-sky-400/50 sm:h-11 sm:text-sm"
+              >
+                {quizzes.map((q) => (
+                  <option key={q.quiz_id} value={q.quiz_id}>
+                    {q.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             <label className="grid gap-1 text-sm">
               <span className="text-white">Round</span>
@@ -311,7 +410,7 @@ export function PointsEntryClient() {
               <button
                 type="button"
                 onClick={() => openScoreboard({ type: "all" })}
-                className="h-12 touch-manipulation rounded-xl bg-white px-4 text-sm font-semibold text-zinc-950 hover:bg-zinc-200 sm:h-11"
+                className={scoreboardNavButtonClass(allRoundsActive)}
               >
                 All rounds
               </button>
@@ -319,7 +418,7 @@ export function PointsEntryClient() {
               <button
                 type="button"
                 onClick={() => (roundId ? openScoreboard({ type: "round", round_id: roundId }) : null)}
-                className="h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11"
+                className={scoreboardNavButtonClass(thisRoundActive)}
               >
                 This round
               </button>
@@ -327,9 +426,27 @@ export function PointsEntryClient() {
               <button
                 type="button"
                 onClick={() => openScoreboard({ type: "total" })}
-                className="h-12 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11"
+                className={scoreboardNavButtonClass(totalPointsActive)}
               >
                 Total points
+              </button>
+            </div>
+
+            <div className="flex gap-2 border-t border-white/10 pt-3">
+              <button
+                type="button"
+                onClick={openLedScreenPage}
+                className="h-12 flex-1 touch-manipulation rounded-xl border border-sky-400/30 bg-sky-500/15 px-4 text-sm font-semibold text-sky-100 hover:bg-sky-500/25 sm:h-11"
+              >
+                Open LED screen
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyLedScreenLink()}
+                className="h-12 shrink-0 touch-manipulation rounded-xl border border-white/10 bg-white/5 px-4 text-sm font-semibold text-white hover:bg-white/10 sm:h-11"
+                title="Copy LED screen link"
+              >
+                Copy link
               </button>
             </div>
           </div>

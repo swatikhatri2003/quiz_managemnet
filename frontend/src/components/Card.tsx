@@ -20,7 +20,11 @@ export function Card({
     >
       <div className="mb-3 flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <h2 className="min-w-0 text-sm font-semibold leading-snug text-zinc-100">{title}</h2>
-        {right ? <div className="w-full shrink-0 sm:w-auto">{right}</div> : null}
+        {right ? (
+          <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
+            {right}
+          </div>
+        ) : null}
       </div>
       {children}
     </motion.section>

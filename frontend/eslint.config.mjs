@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // macOS AppleDouble metadata (invalid UTF-8 / parse errors if linted)
+    "**/._*",
   ]),
 ]);
 

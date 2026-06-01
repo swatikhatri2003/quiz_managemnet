@@ -16,6 +16,8 @@ export type Team = {
 export type Round = {
   round_id: number;
   round_name: string;
+  image: string | null;
+  image_url?: string | null;
   quiz_id: number;
   maximum_score: number;
 };
@@ -34,6 +36,7 @@ export type PointRow = {
     team_id: number;
     team_name: string;
     image: string | null;
+    
     image_url: string | null;
     quiz: { quiz_id: number };
   };
